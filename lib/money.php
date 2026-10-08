@@ -45,9 +45,13 @@ final class Money
 				$s = str_replace(',', '', $s);
 			}
 		}
-		else
+		elseif ($lastComma !== false || $lastDot !== false)
 		{
-			$s = str_replace(',', '.', $s);
+			// один вид разделителя: ровно 3 цифры после каждого — это тысячи («12,300» = 12 300)
+			$sep = $lastComma !== false ? ',' : '.';
+			$s = preg_match('/^-?\d{1,3}(' . preg_quote($sep, '/') . '\d{3})+$/', $s)
+				? str_replace($sep, '', $s)
+				: str_replace(',', '.', $s);
 		}
 
 		if (!preg_match('/^(-?)(\d+)(?:\.(\d+))?$/', $s, $m))

@@ -32,8 +32,10 @@
 		var lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
 		if (lc !== -1 && ld !== -1) {
 			s = lc > ld ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
-		} else {
-			s = s.replace(',', '.');
+		} else if (lc !== -1 || ld !== -1) {
+			var sep = lc !== -1 ? ',' : '.';
+			var thousands = new RegExp('^-?\\d{1,3}(\\' + sep + '\\d{3})+$');
+			s = thousands.test(s) ? s.split(sep).join('') : s.replace(',', '.');
 		}
 		var m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(s);
 		if (!m) { return null; }

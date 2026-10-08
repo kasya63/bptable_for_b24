@@ -35,6 +35,12 @@ $eq('"2 000 000.5"', Money::normalize('2 000 000.5'), '2000000.50');
 $eq('"1.234.567,891"', Money::normalize('1.234.567,891'), '1234567.89');
 $eq('"1,234,567.895"', Money::normalize('1,234,567.895'), '1234567.90');
 $eq('"abc"', Money::normalize('abc'), null);
+$eq('"12,300" (тысячи)', Money::normalize('12,300'), '12300.00');
+$eq('"₸61,500"', Money::normalize('₸61,500'), '61500.00');
+$eq('"1,234,567"', Money::normalize('1,234,567'), '1234567.00');
+$eq('"12.300"', Money::normalize('12.300'), '12300.00');
+$eq('"12,30"', Money::normalize('12,30'), '12.30');
+$eq('"1,5"', Money::normalize('1,5'), '1.50');
 $eq('format', Money::format('4550000.00'), "4\xC2\xA0550\xC2\xA0000,00");
 
 echo "== Period\n";

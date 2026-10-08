@@ -17,7 +17,7 @@
           "organization": { "$ref": "#/$defs/ref", "description": "Организация. id — ID CRM-компании (мои реквизиты)." },
           "project":      { "$ref": "#/$defs/ref", "description": "Проект. id — ID элемента смарт-процесса 140." },
           "expense":      { "$ref": "#/$defs/ref", "description": "Статья. id — ID элемента смарт-процесса 150." },
-          "employee":     { "$ref": "#/$defs/ref", "description": "Сотрудник если в входных данных были указаны пользователи в промте, только title." },
+          "employee":     { "$ref": "#/$defs/ref", "description": "Сотрудник (только для ЗП). id — ID пользователя Б24, если уверен; иначе только title." },
           "amount":       { "type": "number", "description": "Сумма в тенге, число без пробелов." }
         }
       }
