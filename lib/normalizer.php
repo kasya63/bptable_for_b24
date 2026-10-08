@@ -38,13 +38,21 @@ final class Normalizer
 			}
 		}
 
+		$hasEmployees = self::hasEmployees($rows);
 		if ($forcePreset && Config::isPreset($presetFallback))
 		{
 			$preset = $presetFallback; // тип поля задаёт колонки жёстко
+			if ($hasEmployees && !in_array('employee', Config::presetColumns($preset), true))
+			{
+				Lookup::log("Во входных данных есть сотрудники, но тип поля «{$preset}» без колонки «Сотрудник» — они не сохранены. Используйте тип «ЗП».");
+			}
 		}
 		elseif (!Config::isPreset($preset))
 		{
-			$preset = Config::isPreset($presetFallback) ? $presetFallback : Config::DEFAULT_PRESET;
+			// preset не указан: есть сотрудники — значит ЗП, иначе настройка поля
+			$preset = $hasEmployees
+				? 'payroll'
+				: (Config::isPreset($presetFallback) ? $presetFallback : Config::DEFAULT_PRESET);
 		}
 		$columns = Config::presetColumns($preset);
 
@@ -295,6 +303,24 @@ final class Normalizer
 			}
 		}
 		return $rows;
+	}
+
+	/** Есть ли хоть одна строка с непустым «Сотрудником» (ключ employee / сотрудник) */
+	private static function hasEmployees(array $rows): bool
+	{
+		foreach ($rows as $row)
+		{
+			if (!is_array($row) || array_is_list($row))
+			{
+				continue;
+			}
+			$v = self::mapKeys($row)['employee'] ?? null;
+			if ($v !== null && $v !== '' && $v !== [] && !(is_array($v) && empty($v['id']) && trim((string)($v['title'] ?? '')) === ''))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function isEmptyRow(array $row): bool
