@@ -17,32 +17,32 @@ final class Config
 	 */
 	public const KEEP_TEXT_WITHOUT_ID = true;
 
-	public const DEFAULT_PRESET = 'payment';
+	public const DEFAULT_PRESET = 'payroll';
 
-	/** Описание колонок. type: period | ref | employee | amount */
+	/**
+	 * Колонки. type: ref | employee | amount.
+	 * required — без значения строка не принимается (для ref — нужен ID из справочника).
+	 */
 	public static function columns(): array
 	{
 		return [
-			'period'       => ['title' => 'Период',      'type' => 'period'],
-			'division'     => ['title' => 'Дивизион',    'type' => 'ref'],
-			'organization' => ['title' => 'Организация', 'type' => 'ref'],
-			'project'      => ['title' => 'Проект',      'type' => 'ref'],
-			'expense'      => ['title' => 'Статья',      'type' => 'ref'],
-			'employee'     => ['title' => 'Сотрудник',   'type' => 'employee'],
-			'amount'       => ['title' => 'Сумма',       'type' => 'amount'],
+			'project'  => ['title' => 'Проект',    'type' => 'ref',      'required' => false],
+			'expense'  => ['title' => 'Статья',    'type' => 'ref',      'required' => true],
+			'employee' => ['title' => 'Сотрудник', 'type' => 'employee', 'required' => true],
+			'amount'   => ['title' => 'Сумма',     'type' => 'amount',   'required' => true],
 		];
 	}
 
+	/**
+	 * Решение под одну задачу — один набор колонок.
+	 * Период ставит 1С, дивизион и организация общие на заявку — в таблице их нет.
+	 */
 	public static function presets(): array
 	{
 		return [
 			'payroll' => [
-				'title'   => 'ЗП (с сотрудником)',
-				'columns' => ['period', 'division', 'organization', 'project', 'expense', 'employee', 'amount'],
-			],
-			'payment' => [
-				'title'   => 'Оплата (без сотрудника)',
-				'columns' => ['period', 'division', 'organization', 'project', 'expense', 'amount'],
+				'title'   => 'Распределение по сотрудникам',
+				'columns' => ['project', 'expense', 'employee', 'amount'],
 			],
 		];
 	}
@@ -51,16 +51,6 @@ final class Config
 	public static function refs(): array
 	{
 		return [
-			'division' => [
-				'kind'        => 'hl',
-				'hl_id'       => 32,
-				'title_field' => 'UF_NAME',
-				'code_field'  => 'UF_CODE',
-			],
-			'organization' => [
-				'kind'       => 'company',          // CRM-компания (мои реквизиты)
-				'code_field' => 'UF_ORGANIZATION_ID_API_1C', // на реквизите
-			],
 			'project' => [
 				'kind'           => 'crm',
 				'entity_type_id' => 140,

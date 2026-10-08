@@ -1,7 +1,7 @@
 <?php
 /**
  * php -f /home/bitrix/www/local/modules/local.bptable/tools/selftest.php
- * php -f .../selftest.php -- --project=341 --expense=55 --division=7 --org=12 --user=1
+ * php -f .../selftest.php -- --project=341 --expense=55 --user=1
  * php -f .../selftest.php -- --write=ELEMENT_ID --prop=PROPERTY_CODE --iblock=32
  */
 if (PHP_SAPI !== 'cli')
@@ -50,26 +50,38 @@ $eq('2026-09-30T10:00:00', Period::normalize('2026-09-30T10:00:00'), '2026-09-30
 $eq('31.02.2026', Period::normalize('31.02.2026'), null);
 $eq('excel 46295', Period::normalize('46295'), '2026-09-30T23:59:59+05:00');
 
-echo "== Normalizer (данные из xlsx, упрощённый формат)\n";
+echo "== Normalizer (ответ ИИ: проект, статья, сотрудник, сумма)\n";
 $aiJson = '```json
-{"preset":"payroll","rows":[
- {"period":"30.09.2026 23:59:59","division":"Aimap","organization":"ТОО \"AiMap\"","project":"251277 - АИК религия","expense":"Заработная плата","employee":"Иванов Иван Иванович","amount":150000},
- {"Период":"30.09.2026","Дивизион":"Aimap","Организация":"ТОО \"AiMap\"","Проект":"251265 - SuperVision","Статья":"Заработная плата","Сотрудник":"Петров Петр Петрович","Сумма":"2 000 000"},
+{"rows":[
+ {"period":"30.09.2026","division":"Aimap","project":{"id":458,"title":"Digital Kazdream"},"expense":{"id":81,"title":"ПО"},"employee":"Мади Нурпанов","amount":12300},
+ {"Проект":"251265 - SuperVision","Статья":"ПО","Сотрудник":"Кахар Кашимов","Сумма":"₸123,000"},
  {},
- {"project":"221125 - Smart участковый","amount":"450000"}
+ {"employee":"Остаток — 7G","amount":"61,500"}
 ]}
 ```';
 $d = Normalizer::normalize($aiJson, null, false);
 $eq('preset', $d['preset'], 'payroll');
+$eq('колонки', array_keys($d['rows'][0]), ['project', 'expense', 'employee', 'amount']);
 $eq('пустая строка выкинута', count($d['rows']), 3);
-$eq('текст без ID', $d['rows'][0]['project'], ['id' => null, 'title' => '251277 - АИК религия', 'code' => null]);
-$eq('рус. ключи', $d['rows'][1]['amount'], '2000000.00');
-$eq('неполная строка', $d['rows'][2]['division'], null);
-$eq('сводка', Renderer::summaryText($d), "3 строки · 2\xC2\xA0600\xC2\xA0000,00 ₸");
+$eq('лишние колонки (период, дивизион) отброшены', isset($d['rows'][0]['period']) || isset($d['rows'][0]['division']), false);
+$eq('ID из ответа', $d['rows'][0]['expense'], ['id' => 81, 'title' => 'ПО', 'code' => null]);
+$eq('рус. ключи + «₸123,000»', $d['rows'][1]['amount'], '123000.00');
+$eq('«61,500» — тысячи', $d['rows'][2]['amount'], '61500.00');
+$eq('сводка', Renderer::summaryText($d), "3 строки · 196\xC2\xA0800,00 ₸");
 
-echo "== Позиционная строка (как из Excel)\n";
-$d = Normalizer::normalize(['preset' => 'payment', 'rows' => [['30.09.2026', 'Aimap', 'ТОО', 'Проект', 'Статья', '75 000,00']]], null, false);
-$eq('payment amount', $d['rows'][0]['amount'], '75000.00');
+echo "== Обязательные: статья (из справочника), сотрудник, сумма\n";
+$errs = \Local\Bptable\Validator::errors($d);
+$eq('строка 1 полная', preg_grep('/^Строка 1:/', $errs), []);
+$eq('строка 2: статья текстом', (bool)preg_grep('/^Строка 2: Статья \(выберите из справочника\)$/u', $errs), true);
+$eq('строка 3: нет статьи', (bool)preg_grep('/^Строка 3: Статья$/u', $errs), true);
+$eq('пустая таблица — ошибка', \Local\Bptable\Validator::errors(['rows' => []]) !== [], true);
+$eq('нулевая сумма — ошибка', (bool)\Local\Bptable\Validator::errors(Normalizer::normalize(['rows' => [['expense' => ['id' => 1, 'title' => 'x'], 'employee' => 'A', 'amount' => 0]]], null, false)), true);
+
+echo "== Старые данные (с периодом/дивизионом, preset payment) читаются\n";
+$old = '{"v":1,"preset":"payment","rows":[{"period":"2026-09-30T23:59:59+05:00","division":{"id":8,"title":"AiMap","code":"x"},"project":{"id":327,"title":"P","code":null},"expense":{"id":25,"title":"E","code":null},"amount":"100.00"}]}';
+$o = Normalizer::fromStored($old);
+$eq('preset → payroll', $o['preset'], 'payroll');
+$eq('рендер не падает', Renderer::summaryText($o), "1 строка · 100,00 ₸");
 
 echo "== Идемпотентность\n";
 $j1 = Normalizer::toJson(Normalizer::normalize($aiJson, null, false));
@@ -78,12 +90,11 @@ $eq('normalize(normalize(x)) == normalize(x)', $j2, $j1);
 
 $ids = array_filter([
 	'project' => (int)($opt['project'] ?? 0), 'expense' => (int)($opt['expense'] ?? 0),
-	'division' => (int)($opt['division'] ?? 0), 'organization' => (int)($opt['org'] ?? 0),
 ]);
 if ($ids || !empty($opt['user']))
 {
 	echo "== Дозаполнение по ID из БД\n";
-	$row = ['period' => '30.09.2026', 'amount' => 1];
+	$row = ['amount' => 1];
 	foreach ($ids as $k => $id)
 	{
 		$row[$k] = $id; // JSON-число = ID

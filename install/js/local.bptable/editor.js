@@ -94,30 +94,6 @@
 		return m ? m[1] : '';
 	}
 
-	/* TSV из Excel (с учётом ячеек в кавычках с переносами) */
-	function parseTsv(text) {
-		var rows = [], row = [], cell = '', q = false, i, c;
-		text = text.replace(/\r\n?/g, '\n');
-		for (i = 0; i < text.length; i++) {
-			c = text.charAt(i);
-			if (q) {
-				if (c === '"') {
-					if (text.charAt(i + 1) === '"') { cell += '"'; i++; } else { q = false; }
-				} else { cell += c; }
-			} else if (c === '"' && cell === '') {
-				q = true;
-			} else if (c === '\t') {
-				row.push(cell); cell = '';
-			} else if (c === '\n') {
-				row.push(cell); rows.push(row); row = []; cell = '';
-			} else {
-				cell += c;
-			}
-		}
-		if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-		return rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ''; }); });
-	}
-
 	/* ---------- AJAX ---------- */
 
 	function search(ref, q) {
@@ -221,7 +197,9 @@
 		var thead = el('thead'), tr = el('tr');
 		tr.appendChild(el('th', 'lbpt-ed__num', '#'));
 		this.cols.forEach(function (c) {
-			tr.appendChild(el('th', c.type === 'amount' ? 'lbpt-ed__r' : '', c.title));
+			var th = el('th', c.type === 'amount' ? 'lbpt-ed__r' : '', c.title);
+			if (c.required) { th.appendChild(el('span', 'lbpt-ed__star', '*')); }
+			tr.appendChild(th);
 		});
 		tr.appendChild(el('th', 'lbpt-ed__act', ''));
 		thead.appendChild(tr);
@@ -248,12 +226,12 @@
 		});
 		bar.appendChild(add);
 		bar.appendChild(clr);
-		bar.appendChild(el('span', 'lbpt-ed__hint', 'Можно вставить строки из Excel: выделите ячейки → Ctrl+C → кликните в таблицу → Ctrl+V'));
+		this.errBox = el('div', 'lbpt-ed__errors');
 
 		this.root.appendChild(wrap);
 		this.root.appendChild(bar);
-
-		this.root.addEventListener('paste', function (e) { self.onPaste(e); });
+		this.root.appendChild(this.errBox);
+		this.bindSubmitGuard();
 		this.root.addEventListener('keydown', function (e) {
 			if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); }
 		});
@@ -346,7 +324,7 @@
 			inp.value = v ? (v.title || ('#' + v.id)) : '';
 			inp.title = v && v.code ? ('Код: ' + v.code) : '';
 			inp.classList.toggle('is-linked', !!(v && v.id));
-			inp.classList.toggle('is-miss', !!(v && !v.id && col.type === 'ref'));
+			inp.classList.toggle('is-miss', !!(v && !v.id && col.type === 'ref' && !col.required));
 		}
 
 		var seq = 0;
@@ -375,7 +353,7 @@
 				row[col.key] = self.cfg.keepText ? { id: null, title: t, code: null } : null;
 			}
 			inp.classList.remove('is-linked');
-			inp.classList.toggle('is-miss', col.type === 'ref' && t !== '');
+			inp.classList.toggle('is-miss', col.type === 'ref' && !col.required && t !== '');
 			self.sync();
 			run();
 		});
@@ -394,42 +372,6 @@
 		return inp;
 	};
 
-	Editor.prototype.onPaste = function (e) {
-		var text = (e.clipboardData || w.clipboardData).getData('text');
-		if (!text || (text.indexOf('\t') === -1 && text.indexOf('\n') === -1)) { return; } // обычная вставка в ячейку
-		e.preventDefault();
-
-		var self = this;
-		var data = parseTsv(text);
-		if (!data.length) { return; }
-
-		// шапку пропускаем, если ≥2 ячеек совпали с заголовками
-		var titles = this.cols.map(function (c) { return c.title.toLowerCase(); });
-		var hits = data[0].filter(function (x) { return titles.indexOf(x.trim().toLowerCase()) !== -1; }).length;
-		if (hits >= 2) { data.shift(); }
-
-		// одна пустая строка — заменяем
-		if (this.rows.length === 1 && this.isEmpty(this.rows[0])) { this.rows = []; }
-
-		var added = 0;
-		data.forEach(function (cells) {
-			var row = self.emptyRow();
-			self.cols.forEach(function (c, i) {
-				var raw = cells[i] !== undefined ? cells[i].trim() : '';
-				if (raw === '') { return; }
-				if (c.type === 'period') { row[c.key] = parsePeriod(raw, self.tz); }
-				else if (c.type === 'amount') { row[c.key] = parseMoney(raw); }
-				else if (c.type === 'employee') { row[c.key] = { id: null, title: raw }; }
-				else if (self.cfg.keepText) { row[c.key] = { id: null, title: raw, code: null }; }
-			});
-			if (!self.isEmpty(row)) { self.rows.push(row); added++; }
-		});
-
-		this.renderRows();
-		this.sync();
-		this.flash('Вставлено строк: ' + added + (this.cfg.keepText ? '. Жёлтые ячейки — выберите значение из справочника.' : ''));
-	};
-
 	Editor.prototype.isEmpty = function (row) {
 		return this.cols.every(function (c) { return row[c.key] === null || row[c.key] === undefined; });
 	};
@@ -440,8 +382,73 @@
 		setTimeout(function () { if (n.parentNode) { n.parentNode.removeChild(n); } }, 5000);
 	};
 
+	/* Обязательные: ref — ID из справочника, сотрудник — ФИО, сумма — не ноль */
+	Editor.prototype.cellOk = function (col, v) {
+		if (!col.required) { return true; }
+		if (col.type === 'ref') { return !!(v && v.id); }
+		if (col.type === 'employee') { return !!(v && String(v.title || '').trim()); }
+		if (col.type === 'amount') { return !!v && toCents(v) !== 0; }
+		return v !== null && v !== undefined;
+	};
+
+	Editor.prototype.validate = function () {
+		var self = this, errors = [], n = 0;
+		var trs = this.tbody.children;
+		this.rows.forEach(function (row, i) {
+			var empty = self.isEmpty(row);
+			if (!empty) { n++; }
+			var missing = [];
+			self.cols.forEach(function (c, ci) {
+				var ok = empty || self.cellOk(c, row[c.key]);
+				var td = trs[i] && trs[i].children[ci + 1];
+				var inp = td && td.querySelector('input');
+				if (inp) { inp.classList.toggle('is-req', !ok); }
+				if (!ok) { missing.push(c.title); }
+			});
+			if (missing.length) { errors.push('Строка ' + (i + 1) + ': ' + missing.join(', ')); }
+		});
+		if (!n) { errors.unshift('Добавьте хотя бы одну строку.'); }
+		this.errors = errors;
+		this.errBox.textContent = '';
+		if (errors.length) {
+			this.errBox.appendChild(el('div', 'lbpt-ed__errors-title', 'Заполните обязательные поля (статья — из справочника):'));
+			errors.slice(0, 10).forEach(function (t) { self.errBox.appendChild(el('div', '', t)); });
+			if (errors.length > 10) { this.errBox.appendChild(el('div', '', '… и ещё ' + (errors.length - 10))); }
+		}
+		return !errors.length;
+	};
+
+	/* Блокируем «Сохранить», пока таблица не заполнена. «Отменить» и прочие кнопки с name=cancel не трогаем. */
+	Editor.prototype.bindSubmitGuard = function () {
+		var self = this;
+		var form = this.root.closest('form');
+		if (!form || form.__lbptGuard) { return; }
+		form.__lbptGuard = true;
+		var lastBtn = null;
+		form.addEventListener('click', function (e) {
+			var b = e.target.closest('button, input[type=submit]');
+			if (b) { lastBtn = b; }
+		}, true);
+		form.addEventListener('submit', function (e) {
+			var btn = e.submitter || lastBtn;
+			var name = btn ? String(btn.name || '') : '';
+			if (/cancel|reject|delegate/i.test(name)) { return; }
+			var editors = form.querySelectorAll('.lbpt-editor');
+			for (var i = 0; i < editors.length; i++) {
+				var ed = editors[i].__lbpt;
+				if (ed && !ed.validate()) {
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					if (ed.errBox.scrollIntoView) { ed.errBox.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+					return;
+				}
+			}
+		}, true);
+	};
+
 	Editor.prototype.sync = function () {
 		var self = this;
+		this.validate();
 		var rows = this.rows.filter(function (r) { return !self.isEmpty(r); });
 		var total = rows.reduce(function (s, r) { return s + toCents(r.amount); }, 0);
 		this.totalCell.textContent = fmtMoney(fromCents(total));
@@ -481,6 +488,10 @@
 			'.lbpt-ed__del:hover{color:#ff5752}',
 			'.lbpt-ed__bar{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}',
 			'.lbpt-ed__hint{font-size:12px;color:#a8adb4}',
+			'.lbpt-ed__t input.is-req{border-color:#ff5752;background:#fff1f0}',
+			'.lbpt-ed__star{color:#ff5752;margin-left:2px}',
+			'.lbpt-ed__errors{margin-top:8px;font-size:12px;color:#c4302b}',
+			'.lbpt-ed__errors-title{font-weight:bold;margin-bottom:2px}',
 			'.lbpt-ed__flash{margin-top:6px;font-size:12px;color:#7a5b00;background:#fff5cc;padding:4px 8px;border-radius:4px;display:inline-block}',
 			'.lbpt-drop{position:absolute;z-index:10000;background:#fff;border:1px solid #dfe0e3;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:280px;overflow-y:auto;font-size:13px}',
 			'.lbpt-drop__item{padding:7px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:12px}',
@@ -502,6 +513,6 @@
 			injectCss();
 			root.__lbpt = new Editor(root, cfg);
 		},
-		_test: { parseMoney: parseMoney, parsePeriod: parsePeriod, fmtMoney: fmtMoney, parseTsv: parseTsv, toCents: toCents }
+		_test: { parseMoney: parseMoney, parsePeriod: parsePeriod, fmtMoney: fmtMoney, toCents: toCents }
 	};
 })(window, document);

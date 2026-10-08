@@ -26,7 +26,7 @@ final class Editor
 		foreach (Config::presetColumns($preset) as $key)
 		{
 			$def = Config::columns()[$key];
-			$columns[] = ['key' => $key, 'title' => $def['title'], 'type' => $def['type']];
+			$columns[] = ['key' => $key, 'title' => $def['title'], 'type' => $def['type'], 'required' => !empty($def['required'])];
 		}
 
 		$cfg = [

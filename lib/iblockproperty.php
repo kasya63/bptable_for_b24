@@ -65,11 +65,17 @@ class IblockProperty
 
 	public static function CheckFields($arProperty, $value)
 	{
-		// Q8: валидации нет. Только защита от переполнения TEXT (64 КБ).
 		$raw = is_array($value) && array_key_exists('VALUE', $value) ? $value['VALUE'] : $value;
 		if (is_string($raw) && strlen($raw) > 60000)
 		{
 			return ['Таблица слишком большая для хранения (> 60 КБ).'];
+		}
+		// Обязательные колонки проверяем только при заполнении в БП (задание).
+		// Форма элемента списка и запись из БП в свойство не блокируются.
+		if (static::isBizprocContext($arProperty) && is_string($raw) && trim($raw) !== '')
+		{
+			$errors = Validator::errors(Normalizer::fromStored($raw, static::preset($arProperty)));
+			return $errors ? array_merge(['Таблица распределения:'], $errors) : [];
 		}
 		return [];
 	}
