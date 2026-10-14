@@ -29,7 +29,7 @@ final class Config
 		return [
 			'project'  => ['title' => 'Проект',    'type' => 'ref',      'required' => false],
 			'expense'  => ['title' => 'Статья',    'type' => 'ref',      'required' => true],
-			'employee' => ['title' => 'Сотрудник', 'type' => 'employee', 'required' => true],
+			'employee' => ['title' => 'Сотрудник', 'type' => 'employee', 'required' => false],
 			'amount'   => ['title' => 'Сумма',     'type' => 'amount',   'required' => true],
 		];
 	}

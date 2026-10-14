@@ -86,6 +86,11 @@ final class UserFieldType
 	{
 		$name = $arAdditionalParameters['NAME'] ?? $arUserField['FIELD_NAME'];
 		$raw = $arUserField['VALUE'] ?? '';
+		if (empty($arUserField['ID']) && isset($arAdditionalParameters['~arUserField']))
+		{
+			// system.field.edit экранирует arParams вглубь ({&quot;rows&quot;…) — берём сырое значение
+			$raw = $arAdditionalParameters['~arUserField']['VALUE'] ?? '';
+		}
 		if (is_array($raw))
 		{
 			$raw = reset($raw) ?: '';
