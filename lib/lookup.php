@@ -54,6 +54,75 @@ final class Lookup
 		return array_intersect_key($cached, array_flip($ids));
 	}
 
+	/**
+	 * Весь справочник проектов (для сопоставления по названию).
+	 * @return list<array{id:int, title:string, name:string, code:?string, active:bool}>
+	 */
+	public static function projectCatalog(): array
+	{
+		static $catalog = null;
+		if ($catalog !== null)
+		{
+			return $catalog;
+		}
+		$cfg = Config::refs()['project'];
+		Loader::requireModule('crm');
+		$factory = \Bitrix\Crm\Service\Container::getInstance()->getFactory((int)$cfg['entity_type_id']);
+		$catalog = [];
+		if (!$factory)
+		{
+			return $catalog;
+		}
+		$items = $factory->getItems([
+			'select' => ['ID', 'TITLE', $cfg['code_field'], $cfg['name_field'], $cfg['active_field']],
+		]);
+		foreach ($items as $item)
+		{
+			$active = $item->get($cfg['active_field']);
+			$code = $item->get($cfg['code_field']);
+			$catalog[] = [
+				'id'     => (int)$item->getId(),
+				'title'  => (string)$item->getTitle(),
+				'name'   => (string)$item->get($cfg['name_field']),
+				'code'   => ($code === null || $code === '') ? null : (string)$code,
+				'active' => in_array($active, [true, 1, '1', 'Y', 'true'], true),
+			];
+		}
+		return $catalog;
+	}
+
+	/** [userId => ['name' => 'Фамилия Имя', 'iin' => ?string]] — ИИН из UF_IIN */
+	public static function usersWithIin(array $ids): array
+	{
+		$ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+		if (!$ids)
+		{
+			return [];
+		}
+		$field = Config::USER_IIN_FIELD;
+		$select = ['ID', 'NAME', 'LAST_NAME', 'SECOND_NAME', 'LOGIN'];
+		try
+		{
+			$rows = \Bitrix\Main\UserTable::getList(['select' => array_merge($select, [$field]), 'filter' => ['@ID' => $ids]])->fetchAll();
+		}
+		catch (\Throwable $e)
+		{
+			self::log("{$field}: " . $e->getMessage());
+			$rows = \Bitrix\Main\UserTable::getList(['select' => $select, 'filter' => ['@ID' => $ids]])->fetchAll();
+		}
+		$format = \CSite::GetNameFormat(false);
+		$out = [];
+		foreach ($rows as $row)
+		{
+			$iin = preg_replace('/\D+/', '', (string)($row[$field] ?? ''));
+			$out[(int)$row['ID']] = [
+				'name' => \CUser::FormatName($format, $row, true, false),
+				'iin'  => $iin === '' ? null : $iin,
+			];
+		}
+		return $out;
+	}
+
 	/** [userId => 'Фамилия Имя Отчество'] */
 	public static function users(array $ids): array
 	{

@@ -162,6 +162,17 @@ final class Normalizer
 				'amount'   => Money::normalize($raw),
 			};
 		}
+		// ИИН из ответа ИИ (колонка «iin» в payment_table AI Lab) → внутрь сотрудника, скрыто.
+		// Только с верной контрольной цифрой: искажённый моделью номер не сохраняем.
+		if (isset($out['employee']) && is_array($out['employee']) && !isset($out['employee']['iin']))
+		{
+			$iin = self::iin($row['iin'] ?? $row['employee_iin'] ?? $row['иин'] ?? null);
+			if ($iin !== null && self::iinValid($iin))
+			{
+				$out['employee']['iin'] = $iin;
+			}
+		}
+
 		return $out;
 	}
 
@@ -219,7 +230,17 @@ final class Normalizer
 		{
 			$id = self::intOrNull($raw['id'] ?? $raw['ID'] ?? null);
 			$title = self::str($raw['title'] ?? $raw['name'] ?? '');
-			return ($id === null && $title === '') ? null : ['id' => $id, 'title' => $title];
+			if ($id === null && $title === '')
+			{
+				return null;
+			}
+			$cell = ['id' => $id, 'title' => $title];
+			$iin = self::iin($raw['iin'] ?? null);
+			if ($iin !== null)
+			{
+				$cell['iin'] = $iin;   // скрытый ИИН — на фронте не показывается
+			}
+			return $cell;
 		}
 		$title = self::str($raw);
 		return $title === '' ? null : ['id' => null, 'title' => $title];
@@ -265,23 +286,36 @@ final class Normalizer
 
 		if (in_array('employee', $columns, true))
 		{
-			$need = [];
+			$ids = [];
 			foreach ($rows as $r)
 			{
-				if ($r['employee'] && $r['employee']['id'] && $r['employee']['title'] === '')
+				if ($r['employee'] && $r['employee']['id'])
 				{
-					$need[] = $r['employee']['id'];
+					$ids[] = $r['employee']['id'];
 				}
 			}
-			if ($need)
+			if ($ids)
 			{
-				$found = Lookup::users($need);
+				$users = Lookup::usersWithIin($ids);
 				foreach ($rows as $i => $r)
 				{
 					$e = $r['employee'];
-					if ($e && $e['id'] && $e['title'] === '' && isset($found[$e['id']]))
+					if (!$e || !$e['id'] || !isset($users[$e['id']]))
 					{
-						$rows[$i]['employee']['title'] = $found[$e['id']];
+						continue;
+					}
+					if ($e['title'] === '')
+					{
+						$rows[$i]['employee']['title'] = $users[$e['id']]['name'];
+					}
+					// выбран пользователь Б24 → ИИН из его карточки (UF_IIN), пусто — убираем
+					if ($users[$e['id']]['iin'] !== null)
+					{
+						$rows[$i]['employee']['iin'] = $users[$e['id']]['iin'];
+					}
+					else
+					{
+						unset($rows[$i]['employee']['iin']);
 					}
 				}
 			}
@@ -333,6 +367,48 @@ final class Normalizer
 			}
 		}
 		return true;
+	}
+
+	/** ИИН: только цифры, строкой (ведущий ноль сохраняется) */
+	/** Контрольная цифра ИИН РК (12 цифр, два набора весов) */
+	public static function iinValid(string $iin): bool
+	{
+		if (!preg_match('/^\d{12}$/', $iin))
+		{
+			return false;
+		}
+		$d = array_map('intval', str_split($iin));
+		$sum = 0;
+		for ($i = 0; $i < 11; $i++)
+		{
+			$sum += $d[$i] * ($i + 1);
+		}
+		$check = $sum % 11;
+		if ($check === 10)
+		{
+			$w = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2];
+			$sum = 0;
+			for ($i = 0; $i < 11; $i++)
+			{
+				$sum += $d[$i] * $w[$i];
+			}
+			$check = $sum % 11;
+			if ($check === 10)
+			{
+				return false;
+			}
+		}
+		return $check === $d[11];
+	}
+
+	private static function iin($v): ?string
+	{
+		if (!is_scalar($v) || is_bool($v))
+		{
+			return null;
+		}
+		$s = preg_replace('/\D+/', '', (string)$v);
+		return $s === '' ? null : $s;
 	}
 
 	private static function intOrNull($v): ?int

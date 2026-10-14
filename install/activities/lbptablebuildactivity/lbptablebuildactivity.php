@@ -14,6 +14,8 @@ class CBPLbpTableBuildActivity extends CBPActivity
 			'Source'         => '',
 			'Preset'         => 'payroll',
 			'TargetVariable' => '',
+			'UsersInProjects' => '',
+			'DefaultProject'  => '',
 			// return
 			'Result'     => '',
 			'RowsCount'  => 0,
@@ -64,7 +66,25 @@ class CBPLbpTableBuildActivity extends CBPActivity
 		}
 
 		$preset = \Local\Bptable\Config::isPreset($this->Preset) ? $this->Preset : \Local\Bptable\Config::DEFAULT_PRESET;
-		$data = \Local\Bptable\Normalizer::normalize($decoded ?? '', $preset, true, true);
+		$data = \Local\Bptable\Normalizer::normalize($decoded ?? '', $preset, false, true);
+
+		// Проект строки — по сотруднику из «Пользователи в проектах», иначе общий проект заявки
+		$users = \Local\Bptable\ProjectMatcher::parseUsers($this->UsersInProjects);
+		$defaultProject = \Local\Bptable\ProjectMatcher::parseProjectId($this->DefaultProject);
+		$projectNote = '';
+		if ($data['rows'] && ($users || $defaultProject))
+		{
+			$matcher = new \Local\Bptable\ProjectMatcher($users, $users ? \Local\Bptable\Lookup::projectCatalog() : []);
+			$data = $matcher->apply($data, $defaultProject);
+			$st = $matcher->stats;
+			$projectNote = sprintf('; проект по сотруднику: %d, общий проект: %d', $st['matched'], $st['default']);
+			if ($st['ambiguous'])
+			{
+				$this->WriteToTrackingService('Проект не определён однозначно (поставлен общий): ' . implode('; ', array_slice($st['ambiguous'], 0, 10)));
+			}
+		}
+
+		$data = \Local\Bptable\Normalizer::normalize($data, $preset, true, true); // дозаполнить названия/коды
 		$json = \Local\Bptable\Normalizer::toJson($data);
 
 		$stats = \Local\Bptable\Stats::of($data);
@@ -82,10 +102,11 @@ class CBPLbpTableBuildActivity extends CBPActivity
 		}
 
 		$this->WriteToTrackingService(sprintf(
-			'Таблица: строк %d, итого %s, ячеек без ID %d%s',
+			'Таблица: строк %d, итого %s, ячеек без ID %d%s%s',
 			$stats['rows'],
 			\Local\Bptable\Money::format(\Local\Bptable\Money::fromCents($stats['totalCents'])),
 			$stats['unresolved'],
+			$projectNote,
 			$target !== '' ? ", записано в {$target}" : ''
 		));
 
@@ -134,6 +155,18 @@ class CBPLbpTableBuildActivity extends CBPActivity
 				'Options'   => $presetOptions,
 				'Default'   => 'payroll',
 				'Required'  => true,
+			],
+			'UsersInProjects' => [
+				'Name'        => 'Пользователи в проектах (JSON)',
+				'Description' => '[{"project":"Signature","employees":["Зуб Александр Александрович"]}]. Проект строки ставится по сотруднику',
+				'FieldName'   => 'lbpt_users',
+				'Type'        => Bizproc\FieldType::TEXT,
+			],
+			'DefaultProject' => [
+				'Name'        => 'Общий проект заявки (ID)',
+				'Description' => 'Ставится, если сотрудник не найден. Например {=A…:article_project_id}',
+				'FieldName'   => 'lbpt_default_project',
+				'Type'        => Bizproc\FieldType::STRING,
 			],
 			'TargetVariable' => [
 				'Name'        => 'Записать в переменную',

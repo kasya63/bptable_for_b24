@@ -77,7 +77,11 @@ final class UserFieldType
 		return Renderer::view(self::data($arUserField, $arUserField['VALUE'] ?? ''), true);
 	}
 
-	/** Карточка в режиме редактирования: просмотр + скрытое поле (значение не затирается) */
+	/**
+	 * БП (задание, переменная, дизайнер): CCrmDocument::GetFieldInputControl → system.field.edit без шаблона
+	 * → сюда с синтетическим полем без ID → редактор.
+	 * Карточка CRM в режиме редактирования (поле с ID): просмотр + скрытое поле (значение не затирается).
+	 */
 	public static function GetPublicEdit($arUserField, $arAdditionalParameters = [])
 	{
 		$name = $arAdditionalParameters['NAME'] ?? $arUserField['FIELD_NAME'];
@@ -86,6 +90,16 @@ final class UserFieldType
 		{
 			$raw = reset($raw) ?: '';
 		}
+
+		if (empty($arUserField['ID']))
+		{
+			if (is_string($raw) && \CBPActivity::isExpression($raw))
+			{
+				$raw = '';
+			}
+			return Editor::render($name, Normalizer::normalize($raw, self::preset($arUserField), true, false));
+		}
+
 		return Renderer::view(self::data($arUserField, $raw), true)
 			. '<input type="hidden" name="' . htmlspecialcharsbx($name) . '" value="' . htmlspecialcharsbx((string)$raw) . '">';
 	}

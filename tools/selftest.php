@@ -69,6 +69,22 @@ $eq('рус. ключи + «₸123,000»', $d['rows'][1]['amount'], '123000.00')
 $eq('«61,500» — тысячи', $d['rows'][2]['amount'], '61500.00');
 $eq('сводка', Renderer::summaryText($d), "3 строки · 196\xC2\xA0800,00 ₸");
 
+echo "== ИИН внутри сотрудника (скрытый)\n";
+$di = Normalizer::normalize('{"rows":[{"expense":{"id":81,"title":"ПО"},"employee":{"id":null,"title":"Мади Нурпанов","iin":"000119551262"},"amount":12300},{"expense":{"id":81,"title":"ПО"},"employee":"Остаток — 7G","amount":1}]}', null, false);
+$eq('колонки без ИИН', array_keys($di['rows'][0]), ['project', 'expense', 'employee', 'amount']);
+$eq('ИИН в сотруднике, ведущий ноль цел', $di['rows'][0]['employee'], ['id' => null, 'title' => 'Мади Нурпанов', 'iin' => '000119551262']);
+$eq('без ИИН — ключа нет', $di['rows'][1]['employee'], ['id' => null, 'title' => 'Остаток — 7G']);
+$eq('в карточке ИИН не виден', str_contains(Renderer::view($di, true), '000119551262'), false);
+$eq('в тексте уведомлений ИИН не виден', str_contains(Renderer::plainText($di), '000119551262'), false);
+$eq('идемпотентно', Normalizer::toJson(Normalizer::normalize(Normalizer::toJson($di), null, false)), Normalizer::toJson($di));
+
+echo "== ИИН колонкой из AI Lab → внутрь сотрудника\n";
+$da = Normalizer::normalize('{"rows":[{"expense":{"id":82,"title":"Л"},"employee":"Мади Нурпанов","iin":"000119551262","amount":1},{"expense":{"id":82,"title":"Л"},"employee":"Мерей Тургараева","iin":"040829601786","amount":1}]}', null, false);
+$eq('колонки без ИИН', array_keys($da['rows'][0]), ['project', 'expense', 'employee', 'amount']);
+$eq('верный ИИН → в сотрудника', $da['rows'][0]['employee'], ['id' => null, 'title' => 'Мади Нурпанов', 'iin' => '000119551262']);
+$eq('искажённый ИИН (контрольная цифра) → не сохранён', isset($da['rows'][1]['employee']['iin']), false);
+$eq('контрольная цифра: 040829601785 верный', Normalizer::iinValid('040829601785'), true);
+
 echo "== Обязательные: статья (из справочника), сотрудник, сумма\n";
 $errs = \Local\Bptable\Validator::errors($d);
 $eq('строка 1 полная', preg_grep('/^Строка 1:/', $errs), []);

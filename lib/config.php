@@ -21,6 +21,7 @@ final class Config
 
 	/**
 	 * Колонки. type: ref | employee | amount.
+	 * В ячейке сотрудника хранится ещё и ИИН — {"id", "title", "iin"}; на фронте не показывается.
 	 * required — без значения строка не принимается (для ref — нужен ID из справочника).
 	 */
 	public static function columns(): array
@@ -55,6 +56,8 @@ final class Config
 				'kind'           => 'crm',
 				'entity_type_id' => 140,
 				'code_field'     => 'UF_CRM_20_ID_FIN_HUB',
+				'name_field'     => 'UF_CRM_20_NAME_FIN_HUB', // название в FIN HUB — по нему ищем проект сотрудника
+				'active_field'   => 'UF_CRM_20_IS_ACTIVE',
 				'url'            => '/crm/type/140/details/#ID#/',
 			],
 			'expense' => [
@@ -65,6 +68,9 @@ final class Config
 			],
 		];
 	}
+
+	/** Пользовательское поле ИИН у пользователя (USER, ID поля 7537) */
+	public const USER_IIN_FIELD = 'UF_IIN';
 
 	public static function companyUrl(): string
 	{
